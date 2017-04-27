@@ -46,6 +46,7 @@ class BaseForwardingRule(GoogleCloudPlatform):
         self.port_range = port_range
         self.ip_address = ip_address
 
+
     @abstractmethod
     def _get_endpoint(self):
         """Return the endpoint object for this type"""
@@ -56,7 +57,8 @@ class BaseForwardingRule(GoogleCloudPlatform):
             'name': self.name,
             'target': self.target_proxy,
             'portRange': self.port_range,
-            'IPAddress': self.ip_address
+            'IPAddress': self.ip_address,
+            'backendService': self.backend_service,
         })
         return self.body
 
@@ -92,6 +94,33 @@ class BaseForwardingRule(GoogleCloudPlatform):
 
 
 class ForwardingRule(BaseForwardingRule):
+    def __init__(self,
+                 config,
+                 logger,
+                 name,
+                 region,
+                 backend_service,
+                 port_range=None,
+                 ip_address=None,
+                 additional_settings=None):
+        super(BaseForwardingRule, self).__init__(
+                config,
+                logger,
+                name,
+                port_range=port_range,
+                ip_address=ip_address,
+                additional_settings=additional_settings)
+
+        self.region = region
+        self.backend_service = backend_service
+
+    def to_dict(self):
+        self.body.update({
+            'region': self.region,
+            'backendService': self.backend_service
+        })
+
+
     def _get_endpoint(self):
         return self.discovery.forwardingRules()
 
@@ -153,4 +182,43 @@ def delete(**kwargs):
         forwarding_rule = GlobalForwardingRule(gcp_config,
                                                ctx.logger,
                                                name=name)
+        utils.delete_if_not_external(forwarding_rule)
+
+
+@operation
+@utils.throw_cloudify_exceptions
+def create(name,port_range,
+           ip_address, region, backend_service, additional_settings, **kwargs):
+    name = utils.get_final_resource_name(name)
+    gcp_config = utils.get_gcp_config()
+
+    # if not service_backend:
+    #     rel = utils.get_relationships(
+    #             ctx,
+    #             filter_relationships='cloudify.gcp.relationships.'
+    #             'forwarding_rule_connected_to_target_proxy')[0]
+    #     target_proxy = rel.target.instance.runtime_properties['selfLink']
+
+    forwarding_rule = ForwardingRule(
+            gcp_config,
+            ctx.logger,
+            name,
+            region,
+            backend_service,
+            port_range,
+            ip_address,
+            additional_settings=additional_settings)
+    utils.create(forwarding_rule)
+
+
+@operation
+@utils.retry_on_failure('Retrying deleting forwarding rule')
+@utils.throw_cloudify_exceptions
+def delete(**kwargs):
+    gcp_config = utils.get_gcp_config()
+    name = ctx.instance.runtime_properties.get('name')
+    if name:
+        forwarding_rule = ForwardingRule(gcp_config,
+                                         ctx.logger,
+                                         name=name)
         utils.delete_if_not_external(forwarding_rule)

@@ -714,6 +714,54 @@ node_types:
         delete:
           implementation: gcp_plugin.cloudify_gcp.compute.backend_service.delete
 
+  cloudify.gcp.nodes.RegionBackendService:
+    derived_from: cloudify.nodes.Root
+    properties:
+      use_external_resource:
+        description: >
+          Indicate whether the resource exists and use existing (true)
+          or if Cloudify should create new resource (false).
+        type: boolean
+        default: false
+      gcp_config:
+        description: >
+          A dictionary of values to pass to authenticate with the GCP API.
+        default: {}
+      name:
+        description: >
+          Optional health check name. By default it will be backend service id.
+        type: string
+        default: ''
+      health_check:
+        description: >
+          URL of a health check assigned to this backend service.
+        type: string
+        default: ''
+      region:
+        description: >
+          A region where backend is emplaced
+        default: ''
+      additional_settings:
+        description: >
+          Optional additional settings. Possible fields in dictionary are:
+          port_name, protocol, timeout_sec.
+        default: {}
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        create:
+          implementation: gcp_plugin.cloudify_gcp.compute.region_backend_service.create
+          inputs:
+            name:
+              default: { get_property: [SELF, name]}
+            region:
+              default: { get_property: [SELF, region]}
+            health_check:
+              default: { get_property: [SELF, health_check]}
+            additional_settings:
+              default: { get_property: [SELF, additional_settings]}
+        delete:
+          implementation: gcp_plugin.cloudify_gcp.compute.region_backend_service.delete
+
   cloudify.gcp.nodes.UrlMap:
     derived_from: cloudify.nodes.Root
     properties:
@@ -920,6 +968,74 @@ node_types:
               default: { get_property: [SELF, port_range]}
             ip_address:
               default: { get_property: [SELF, ip_address]}
+            additional_settings:
+              default: { get_property: [SELF, additional_settings]}
+        delete:
+          implementation: gcp_plugin.cloudify_gcp.compute.forwarding_rule.delete
+      cloudify.interfaces.validation:
+        create:
+          implementation: gcp_plugin.cloudify_gcp.compute.forwarding_rule.creation_validation
+
+  cloudify.gcp.nodes.ForwardingRule:
+    derived_from: cloudify.nodes.Root
+    properties:
+      use_external_resource:
+        description: >
+          Indicate whether the resource exists and use existing (true)
+          or if Cloudify should create new resource (false).
+        type: boolean
+        default: false
+      gcp_config:
+        description: >
+          A dictionary of values to pass to authenticate with the GCP API.
+        default: {}
+      name:
+        description: >
+          Optional global forwarding rule name. By default it will be
+          global forwarding rule id.
+        type: string
+        default: ''
+      port_range:
+        description: >
+          Port number used by this forwarding rule. If packets are redirected to
+          HTTP proxy, then possible values are 80 and 8080, in case of HTTPS proxy
+          the only accepted value is 443.
+        type: string
+        default: '80'
+      ip_address:
+        description: >
+          IP address associated with this forwarding rule. This address
+          should be reserved earlier.
+        type: string
+        default: ''
+      backend_service:
+        description: >
+          BackednService resource used to receive the matched traffic
+        type: string
+        default: ''
+      region:
+        description: >
+          Region for which rule is defined
+        default: ''
+      additional_settings:
+        description: >
+          Additional setting for ssl certificate
+        default: {}
+    interfaces:
+      cloudify.interfaces.lifecycle:
+        create:
+          implementation: gcp_plugin.cloudify_gcp.compute.forwarding_rule.create
+          inputs:
+            name:
+              default: { get_property: [SELF, name]}
+            port_range:
+              default: { get_property: [SELF, port_range]}
+            ip_address:
+              default: { get_property: [SELF, ip_address]}
+            region:
+              default: { get_property: [SELF, region] }
+            backend_service:
+              default: { get_property: [SELF, backend_service] }
             additional_settings:
               default: { get_property: [SELF, additional_settings]}
         delete:

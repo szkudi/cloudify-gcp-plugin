@@ -1,0 +1,167 @@
+tosca_definitions_version: cloudify_dsl_1_3
+
+
+imports:
+  - http://www.getcloudify.org/spec/cloudify/3.4/types.yaml
+  - plugin.yaml
+
+
+inputs:
+  gcp_auth:
+  project:
+  network:
+    default: default
+  subnetwork:
+    default: default
+  region:
+    default: us-central1
+  zone1:
+    default: us-central1-b
+  zone2:
+    default: us-central1-c
+
+  image_id:
+    default: https://www.googleapis.com/compute/v1/projects/centos-cloud/global/images/centos-7-v20170426
+    required: true
+
+
+dsl_definitions:
+  - &gcp_config
+    auth: { get_input: gcp_auth }
+    project: { get_input: project }
+    subnetwork: { get_input: subnetwork }
+    zone: { get_input: zone1 }
+
+
+node_templates:
+
+  allow-all-internal:
+    type: cloudify.gcp.nodes.FirewallRule
+    properties:
+      sources:
+        - 10.128.0.0/20
+      allowed:
+        tcp:
+        udp:
+        icmp:
+      target_tags: [internatl-lb]
+      gcp_config: *gcp_config
+
+  allow-tcp22-tcp3389-icmp:
+    type: cloudify.gcp.nodes.FirewallRule
+    properties:
+      sources:
+        - 0.0.0.0/0
+      allowed:
+        tcp:
+          - 22
+          - 3389
+        icmp:
+      target_tags: [internal-lb]
+      gcp_config: *gcp_config
+
+
+  instance_group1:
+    type: cloudify.gcp.nodes.InstanceGroup
+    properties:
+      gcp_config: *gcp_config
+
+  instance_group2:
+    type: cloudify.gcp.nodes.InstanceGroup
+    properties:
+      gcp_config: *gcp_config
+
+  test-int-lb1:
+    type: cloudify.gcp.nodes.Instance
+    properties:
+      image_id: { get_input: image_id }
+      external_ip: false
+      install_agent: false
+      gcp_config: *gcp_config
+      tags: [internal-lb]
+      startup_script:
+        type: string
+        script: |
+          #!/bin/bash
+          yum update
+          yum install -y httpd
+          hostname > /var/www/html/index.html
+          systemctl enable httpd
+          systemctl start httpd
+      zone: { get_input: zone1 }
+    relationships:
+      - type: cloudify.gcp.relationships.instance_connected_to_instance_group
+        target: instance_group1
+
+  test-int-lb2:
+    type: cloudify.gcp.nodes.Instance
+    properties:
+      image_id: { get_input: image_id }
+      external_ip: false
+      install_agent: false
+      gcp_config: *gcp_config
+      tags: [internal-lb]
+      startup_script:
+        type: string
+        script: |
+          #!/bin/bash
+          yum update
+          yum install -y httpd
+          hostname > /var/www/html/index.html
+          systemctl enable httpd
+          systemctl start httpd
+      zone: { get_input: zone2}
+    relationships:
+      - type: cloudify.gcp.relationships.instance_connected_to_instance_group
+        target: instance_group2
+
+  test-standalone:
+    type: cloudify.gcp.nodes.Instance
+    properties:
+      image_id: { get_input: image_id }
+      external_ip: true
+      install_agent: false
+      gcp_config: *gcp_config
+      tags: [standalone]
+      startup_script:
+        type: string
+        script: |
+          #!/bin/bash
+          yum update
+          yum install -y httpd
+      zone: { get_input: zone1 }
+
+  healthcheck:
+    type: cloudify.gcp.nodes.HealthCheck
+    properties:
+      gcp_config: *gcp_config
+
+  http_rule:
+    type: cloudify.gcp.nodes.ForwardingRule
+    properties:
+      port_range: 80
+      ip_address: { get_attribute: [test-standalone, address] }
+      backend_service: { get_attribute: [backend, selfLink] }
+      gcp_config: *gcp_config
+
+  backend:
+    type: cloudify.gcp.nodes.RegionBackendService
+    properties:
+      health_check: { get_attribute: [healthcheck, selfLink] }
+      gcp_config: *gcp_config
+      region: { get_input: region }
+    relationships:
+      - type: cloudify.relationships.depends_on
+        target: healthcheck
+      - type: cloudify.gcp.relationships.uses_as_backend
+        target: instance_group1
+      - type: cloudify.gcp.relationships.uses_as_backend
+        target: instance_group2
+
+outputs:
+
+  standalone_ip:
+    value: { get_attribute: [test-standalone, ip] }
+
+  standalone_name:
+    value: { get_attribute: [test-standalone, name] }
